@@ -200,7 +200,7 @@
               <span class="post-meta-item-text">Posted on</span>
               
 
-              <time title="Created: 2022-02-03 23:06:12 / Modified: 23:08:04" itemprop="dateCreated datePublished" datetime="2022-02-03T23:06:12+08:00">2022-02-03</time>
+              <time title="Created: 2022-02-03 23:06:12 / Modified: 23:33:02" itemprop="dateCreated datePublished" datetime="2022-02-03T23:06:12+08:00">2022-02-03</time>
             </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -292,7 +292,7 @@
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203223010117.png" alt="image-20220203223010117"></p>
 <h2 id="DGC修复"><a href="#DGC修复" class="headerlink" title="DGC修复"></a>DGC修复</h2><p>在 JDK8u232_b09 之后，在 <code>DGCImpl_Stub#dirty</code> 方法上设置了反序列化的白名单，而 <code>dirty</code> 方法是 <code>StreamRemoteCall#executeCall</code> 方法的必经之路，所以这也就阻断 <code>executeCall</code>方法反序列化恶意对象了。见 <a target="_blank" rel="noopener" href="http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l4.50">http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l4.50</a></p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203223504425.png" alt="image-20220203223504425"></p>
-<p>在 JDK8u121 之后对 DGCServer 可以反序列化的类进行了一个白名单的限制，限制的方法在 <code>DGCImpl#checkInput</code> （这里就是 JEP290 的限制</p>
+<p>在 JDK8u121 之后对 DGCServer 可以反序列化的类进行了一个白名单的限制，限制的方法在 <code>DGCImpl#checkInput</code> （这里就是 JEP290 的限制，那么也就是在 JEP290 之后就无法利用 exploit/JRMPClient 了</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> var2 != ObjID.class &amp;&amp; var2 != UID.class &amp;&amp; var2 != VMID.class &amp;&amp; var2 != Lease.class ? Status.REJECTED : Status.ALLOWED;</span><br></pre></td></tr></table></figure>
 
 <h1 id="参考文章"><a href="#参考文章" class="headerlink" title="参考文章"></a>参考文章</h1><p><a target="_blank" rel="noopener" href="https://www.anquanke.com/post/id/197829">https://www.anquanke.com/post/id/197829</a><br><a target="_blank" rel="noopener" href="https://xz.aliyun.com/t/2223">https://xz.aliyun.com/t/2223</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/qsort_/article/details/104814905">https://blog.csdn.net/qsort_/article/details/104814905</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/qsort_/article/details/104969138">https://blog.csdn.net/qsort_/article/details/104969138</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/qsort_/article/details/104874111">https://blog.csdn.net/qsort_/article/details/104874111</a><br><a target="_blank" rel="noopener" href="http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l1.40">http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l1.40</a></p>
