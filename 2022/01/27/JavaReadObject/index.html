@@ -9,18 +9,24 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/images/32x32.ico">
   <link rel="icon" type="image/png" sizes="16x16" href="/images/16x16.ico">
   <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
 <link rel="stylesheet" href="/css/main.css">
+
+
 <link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
 <script id="hexo-configurations">
     var NexT = window.NexT || {};
     var CONFIG = {"hostname":"example.com","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":true,"style":"default"},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
   </script>
-<meta name="description" content="WebLogic 反序列化漏洞用到了readObject相关的知识，这里来分析一下ObjectInputStream#readObject方法，后续WebLogic的反序列化漏洞分析打下基础。 编写调试类User 类 1234567891011121314151617181920212223242526272829303132333435363738public class User implem">
+
+  
+<meta name="description" content="WebLogic反序列化漏洞用到了readObject相关的知识，这里来分析一下ObjectInputStream#readObject方法，后续WebLogic的反序列化漏洞分析打下基础。 编写调试类User类 1234567891011121314151617181920212223242526272829303132333435363738public class User implemen">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Java readObject方法分析">
 <meta property="og:url" content="http://example.com/2022/01/27/JavaReadObject/index.html">
 <meta property="og:site_name" content="ky0127">
-<meta property="og:description" content="WebLogic 反序列化漏洞用到了readObject相关的知识，这里来分析一下ObjectInputStream#readObject方法，后续WebLogic的反序列化漏洞分析打下基础。 编写调试类User 类 1234567891011121314151617181920212223242526272829303132333435363738public class User implem">
+<meta property="og:description" content="WebLogic反序列化漏洞用到了readObject相关的知识，这里来分析一下ObjectInputStream#readObject方法，后续WebLogic的反序列化漏洞分析打下基础。 编写调试类User类 1234567891011121314151617181920212223242526272829303132333435363738public class User implemen">
 <meta property="og:locale" content="en_US">
 <meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127133721179.png">
 <meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127134120584.png">
@@ -38,11 +44,14 @@
 <meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127143700022.png">
 <meta property="og:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127143943367.png">
 <meta property="article:published_time" content="2022-01-27T11:40:48.430Z">
-<meta property="article:modified_time" content="2022-01-28T08:18:30.245Z">
+<meta property="article:modified_time" content="2022-02-08T14:20:01.285Z">
 <meta property="article:tag" content="网络安全">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127133721179.png">
+
 <link rel="canonical" href="http://example.com/2022/01/27/JavaReadObject/">
+
+
 <script id="page-configurations">
   // https://hexo.io/docs/variables.html
   CONFIG.page = {
@@ -52,7 +61,15 @@
     lang   : 'en'
   };
 </script>
+
   <title>Java readObject方法分析 | ky0127</title>
+  
+
+
+
+
+
+
   <noscript>
   <style>
   .use-motion .brand,
@@ -64,19 +81,24 @@
   .use-motion .post-header,
   .use-motion .post-body,
   .use-motion .collection-header { opacity: initial; }
+
   .use-motion .site-title,
   .use-motion .site-subtitle {
     opacity: initial;
     top: initial;
   }
+
   .use-motion .logo-line-before i { left: initial; }
   .use-motion .logo-line-after i { right: initial; }
   </style>
 </noscript>
+
 <style>.darkmode--activated{--body-bg-color:#282828;--content-bg-color:#333;--card-bg-color:#555;--text-color:#ccc;--blockquote-color:#bbb;--link-color:#ccc;--link-hover-color:#eee;--brand-color:#ddd;--brand-hover-color:#ddd;--table-row-odd-bg-color:#282828;--table-row-hover-bg-color:#363636;--menu-item-bg-color:#555;--btn-default-bg:#222;--btn-default-color:#ccc;--btn-default-border-color:#555;--btn-default-hover-bg:#666;--btn-default-hover-color:#ccc;--btn-default-hover-border-color:#666;--highlight-background:#282b2e;--highlight-foreground:#a9b7c6;--highlight-gutter-background:#34393d;--highlight-gutter-foreground:#9ca9b6}.darkmode--activated img{opacity:.75}.darkmode--activated img:hover{opacity:.9}.darkmode--activated code{color:#69dbdc;background:0 0}button.darkmode-toggle{z-index:9999}.darkmode-ignore,img{display:flex!important}</style></head>
+
 <body itemscope itemtype="http://schema.org/WebPage">
   <div class="container use-motion">
     <div class="headband"></div>
+
     <a target="_blank" rel="noopener" href="https://github.com/ky0103" class="github-corner" aria-label="View source on GitHub"><svg width="80" height="80" viewBox="0 0 250 250" style="fill:#151513; color:#fff; position: absolute; top: 0; border: 0; right: 0;" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a><style>.github-corner:hover .octo-arm{animation:octocat-wave 560ms ease-in-out}@keyframes octocat-wave{0%,100%{transform:rotate(0)}20%,60%{transform:rotate(-25deg)}40%,80%{transform:rotate(10deg)}}@media (max-width:500px){.github-corner:hover .octo-arm{animation:none}.github-corner .octo-arm{animation:octocat-wave 560ms ease-in-out}}</style>
     <header class="header" itemscope itemtype="http://schema.org/WPHeader">
       <div class="header-inner">
@@ -88,9 +110,14 @@
       <span class="toggle-line toggle-line-last"></span>
     </div>
   </div>
+
   <div class="site-meta">
+
     <a href="/" class="brand" rel="start">
       <span class="logo-line-before"><i></i></span>
+      
+
+
       <h1 class="site-title" id="OnlySiteTitle"></h1>
       <span class="logo-line-after"><i></i></span>
     </a>
@@ -115,6 +142,7 @@
     ("00"+ o[k]).substr((""+ o[k]).length));
     return format;
     }
+
     var d1 = new Date();
     d1 = d1.format('yyyy-MM-dd').replace("-","").replace("-","").slice(4);
     document.getElementById("OnlySiteTitle").innerHTML = "ky"+d1;
@@ -124,33 +152,58 @@
     </div>
   </div>
 </div>
+
+
+
+
 <nav class="site-nav">
   <ul id="menu" class="main-menu menu">
         <li class="menu-item menu-item-categories">
+
     <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories</a>
+
   </li>
         <li class="menu-item menu-item-archives">
+
     <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
   </li>
   </ul>
 </nav>
+
+
+
+
 </div>
     </header>
+
+    
   <div class="back-to-top">
     <i class="fa fa-arrow-up"></i>
     <span>0%</span>
   </div>
+
+
     <main class="main">
       <div class="main-inner">
         <div class="content-wrap">
+          
+
           <div class="content post posts-expand">
+            
+
+    
+  
+  
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2022/01/27/JavaReadObject/">
+
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
       <meta itemprop="name" content="">
       <meta itemprop="description" content="">
     </span>
+
     <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
       <meta itemprop="name" content="ky0127">
     </span>
@@ -158,12 +211,14 @@
         <h1 class="post-title" itemprop="name headline">
           Java readObject方法分析
         </h1>
+
         <div class="post-meta">
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">Posted on</span>
+
               <time title="Created: 2022-01-27 19:40:48" itemprop="dateCreated datePublished" datetime="2022-01-27T19:40:48+08:00">2022-01-27</time>
             </span>
               <span class="post-meta-item">
@@ -171,7 +226,7 @@
                   <i class="far fa-calendar-check"></i>
                 </span>
                 <span class="post-meta-item-text">Edited on</span>
-                <time title="Modified: 2022-01-28 16:18:30" itemprop="dateModified" datetime="2022-01-28T16:18:30+08:00">2022-01-28</time>
+                <time title="Modified: 2022-02-08 22:20:01" itemprop="dateModified" datetime="2022-02-08T22:20:01+08:00">2022-02-08</time>
               </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -182,14 +237,29 @@
                   <a href="/categories/Java%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">Java安全</span></a>
                 </span>
             </span>
+
+          
+
         </div>
       </header>
+
+    
+    
+    
+
+
+
+
     <div class="post-body" itemprop="articleBody">
-        <p>WebLogic 反序列化漏洞用到了<code>readObject</code>相关的知识，这里来分析一下<code>ObjectInputStream#readObject</code>方法，后续<code>WebLogic</code>的反序列化漏洞分析打下基础。</p>
-<h2 id="编写调试类"><a href="#编写调试类" class="headerlink" title="编写调试类"></a>编写调试类</h2><p>User 类</p>
+
+      
+        <p>WebLogic反序列化漏洞用到了<code>readObject</code>相关的知识，这里来分析一下<code>ObjectInputStream#readObject</code>方法，后续<code>WebLogic</code>的反序列化漏洞分析打下基础。</p>
+<h2 id="编写调试类"><a href="#编写调试类" class="headerlink" title="编写调试类"></a>编写调试类</h2><p>User类</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">User</span> <span class="keyword">implements</span> <span class="title">Serializable</span> </span>&#123;</span><br><span class="line">    <span class="keyword">private</span> String name;</span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">int</span> age;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">protected</span> <span class="title">User</span><span class="params">()</span> <span class="keyword">throws</span> IOException, SecurityException </span>&#123;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">User</span><span class="params">(String name, <span class="keyword">int</span> age)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.name = name;</span><br><span class="line">        <span class="keyword">this</span>.age = age;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> String <span class="title">getName</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> name;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setName</span><span class="params">(String name)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.name = name;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">getAge</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> age;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setAge</span><span class="params">(<span class="keyword">int</span> age)</span> </span>&#123;</span><br><span class="line">        <span class="keyword">this</span>.age = age;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title">readObject</span><span class="params">(ObjectInputStream var1)</span> <span class="keyword">throws</span> IOException, ClassNotFoundException </span>&#123;</span><br><span class="line">        var1.defaultReadObject();</span><br><span class="line">        System.out.println(<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">private</span> Object <span class="title">readResolve</span><span class="params">()</span></span>&#123;</span><br><span class="line">        System.out.println(<span class="number">2</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">null</span>;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>Under 类</p>
+
+<p>Under类</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">Under</span> </span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> Exception</span>&#123;</span><br><span class="line">        User user = <span class="keyword">new</span> User();</span><br><span class="line">        user.setAge(<span class="number">10</span>);</span><br><span class="line">        user.setName(<span class="string">&quot;liming&quot;</span>);</span><br><span class="line">        FileOutputStream fileOutputStream = <span class="keyword">new</span> FileOutputStream(<span class="string">&quot;1.ser&quot;</span>);</span><br><span class="line">        ObjectOutputStream objectOutputStream = <span class="keyword">new</span> ObjectOutputStream(fileOutputStream);</span><br><span class="line">        objectOutputStream.writeObject(user);</span><br><span class="line">        FileInputStream fileInputStream = <span class="keyword">new</span> FileInputStream(<span class="string">&quot;1.ser&quot;</span>);</span><br><span class="line">        ObjectInputStream objectInputStream = <span class="keyword">new</span> ObjectInputStream(fileInputStream);</span><br><span class="line">        objectInputStream.readObject();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
 <h2 id="分析调试"><a href="#分析调试" class="headerlink" title="分析调试"></a>分析调试</h2><p>在<code>ObjectInputStream#readObject</code>方法下断点，调试启动<code>Under</code>类即可看到断点停在<code>ObjectInputStream#readObject</code>方法上</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127133721179.png" alt="image-20220127133721179"></p>
 <p>判断<code>enableOverride</code>值是否为<code>true</code>，是的话则调用<code>readObjectOverride</code>方法，<code>enableOverride</code>属性在构造方法中默认设置为<code>false</code>，那么就调用<code>readObject0</code>方法，跟进一下</p>
@@ -200,9 +270,9 @@
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127134601997.png" alt="image-20220127134601997"></p>
 <p>这里再读取一下字节是否为<code>TC_OBJECT</code>，确保是正常进入到这个方法的，然后调用<code>readClassDesc</code>方法，跟进<code>readClassDesc</code>方法</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127134756401.png" alt="image-20220127134756401"></p>
-<p>同理，获取第二个字节，<code>switch</code>判断看进入哪个分支，这里进入到的是<code>TC_CLASSDESC</code>分支，调用<code>readNonProxyDesc</code>方法，跟进一下 <code>readNonProxyDesc</code>方法</p>
+<p>同理，获取第二个字节，<code>switch</code>判断看进入哪个分支，这里进入到的是<code>TC_CLASSDESC</code>分支，调用<code>readNonProxyDesc</code>方法，跟进一下<code>readNonProxyDesc</code>方法</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127135431958.png" alt="image-20220127135431958"></p>
-<p>关键的地方用红框圈出来了，先判断是否正常进入的这个方法，然后创建一个 <code>ObjectStreamClass</code>对象和<code>Class</code>对象，之后再调用<code>resolveClass</code>方法，传入的参数为<code>readDesc</code>，通过<code>readClassDescriptor</code>方法获取到的<code>readDesc</code>存在着反序列化的类名和字段名等信息，跟进一下<code>resolveClass</code>方法</p>
+<p>关键的地方用红框圈出来了，先判断是否正常进入的这个方法，然后创建一个<code>ObjectStreamClass</code>对象和<code>Class</code>对象，之后再调用<code>resolveClass</code>方法，传入的参数为<code>readDesc</code>，通过<code>readClassDescriptor</code>方法获取到的<code>readDesc</code>存在着反序列化的类名和字段名等信息，跟进一下<code>resolveClass</code>方法</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127135611781.png" alt="image-20220127135611781"></p>
 <p>先获取到反序列化的类名，然后用<code>Class.forName</code>加载<code>Class</code>类对象，这里提一嘴的是<code>WebLogic</code>的一部分防御就是在这个方法进行过滤检查的，如果检查未通过则直接<code>Class</code>类对象都没有，更别谈后面的一系列操作了。</p>
 <p>回到<code>readNonProxyDesc</code>方法，用获取到的<code>Class</code>类对象初始化<code>desc</code>，其中就把<code>Class</code>类对象赋值到<code>desc.cl</code>属性中</p>
@@ -211,12 +281,12 @@
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127142058134.png" alt="image-20220127142058134"></p>
 <p>从<code>desc</code>中获取到<code>Class</code>类对象，然后看类对象是否可以实例化的，如果是可以实例化的则进行实例化，继续往下看</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127142314561.png" alt="image-20220127142314561"></p>
-<p>根据<code>desc.isExternalizable()</code>返回值决定<code>readExternalData</code>方法还是 <code>readSerialData</code>方法，这里调用到的是<code>readSerialData</code>方法，我们跟进一下 <code>readExternalData</code>方法看一下是怎么个逻辑</p>
+<p>根据<code>desc.isExternalizable()</code>返回值决定<code>readExternalData</code>方法还是<code>readSerialData</code>方法，这里调用到的是<code>readSerialData</code>方法，我们跟进一下<code>readExternalData</code>方法看一下是怎么个逻辑</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127142644381.png" alt="image-20220127142644381"></p>
 <p>这里是调用对象的<code>readExternal</code>方法，应该是如果反序列化对象存在<code>readExternal</code>方法，则会调用<code>readExternal</code>方法，这个在后面的<code>WebLogic</code>绕过中有利用到。</p>
 <p>那么这里回到<code>readSerialData</code>方法，跟进一下这个方法</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127143109672.png" alt="image-20220127143109672"></p>
-<p>这里根据<code>hasReadObjectMethod</code>方法的返回值决定是否调用<code>invokeReadObject</code>方法，如果反序列化对象重写了<code>readObject</code>方法则<code>hasReadObjectMethod</code>方法的返回值为 <code>true</code>，这里进入<code>invokeReadObject</code>方法看一下</p>
+<p>这里根据<code>hasReadObjectMethod</code>方法的返回值决定是否调用<code>invokeReadObject</code>方法，如果反序列化对象重写了<code>readObject</code>方法则<code>hasReadObjectMethod</code>方法的返回值为<code>true</code>，这里进入<code>invokeReadObject</code>方法看一下</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127143332024.png" alt="image-20220127143332024"></p>
 <p>就是反射调用反序列化对象的<code>readObject</code>方法，那么回到<code>readOrdinaryObject</code>方法</p>
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127143700022.png" alt="image-20220127143700022"></p>
@@ -224,13 +294,30 @@
 <p><img src="https://gitee.com/KiiTyl/java_images/raw/master/java_images/image-20220127143943367.png" alt="image-20220127143943367"></p>
 <p>跟前面的一样，反射调用反序列化对象的<code>readResolve</code>方法，至此就反序列化过程就基本完成了</p>
 <p>总结一下，反序列化过程会尝试调用反序列化对象的<code>readResolve/readObject/readExternal</code>方法，而在后续的<code>WebLogic</code>的绕过过程也是用到了反序列化会调用对象重写的<code>readResolve/readObject/readExternal</code>方法进行绕过。</p>
+
     </div>
+
+    
+    
+    
+
     <div>
+      
         <div>
+    
         <div style="text-align:center;color: #ccc;font-size:14px;">文章略显粗糙,不恰当的地方恳请师傅们指正!</div>
+    
 </div>
+
+      
     </div>
+
       <footer class="post-footer">
+
+        
+
+
+        
     <div class="post-nav">
       <div class="post-nav-item"></div>
       <div class="post-nav-item">
@@ -239,8 +326,17 @@
     </a></div>
     </div>
       </footer>
+    
   </article>
+  
+  
+  
+
+
+
           </div>
+          
+
 <script>
   window.addEventListener('tabs:register', () => {
     let { activeClass } = CONFIG.comments;
@@ -262,14 +358,19 @@
     });
   }
 </script>
+
         </div>
+          
+  
   <div class="toggle sidebar-toggle">
     <span class="toggle-line toggle-line-first"></span>
     <span class="toggle-line toggle-line-middle"></span>
     <span class="toggle-line toggle-line-last"></span>
   </div>
+
   <aside class="sidebar">
     <div class="sidebar-inner">
+
       <ul class="sidebar-nav motion-element">
         <li class="sidebar-nav-toc">
           Table of Contents
@@ -278,11 +379,13 @@
           Overview
         </li>
       </ul>
+
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
           <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BC%96%E5%86%99%E8%B0%83%E8%AF%95%E7%B1%BB"><span class="nav-number">1.</span> <span class="nav-text">编写调试类</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%86%E6%9E%90%E8%B0%83%E8%AF%95"><span class="nav-number">2.</span> <span class="nav-text">分析调试</span></a></li></ol></div>
       </div>
       <!--/noindex-->
+
       <div class="site-overview-wrap sidebar-panel">
         <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
   <p class="site-author-name" itemprop="name"></p>
@@ -292,36 +395,91 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
-          <span class="site-state-item-count">7</span>
+        
+          <span class="site-state-item-count">8</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/categories/">
+          
         <span class="site-state-item-count">1</span>
         <span class="site-state-item-name">categories</span></a>
       </div>
   </nav>
 </div>
+
+
+
       </div>
+
     </div>
   </aside>
   <div id="sidebar-dimmer"></div>
+
+
       </div>
     </main>
+
     <footer class="footer">
       <div class="footer-inner">
+        
+
+        
+
+        
+
+
+
+
+
+
+
+
       </div>
     </footer>
   </div>
+
+  
   <script src="/lib/anime.min.js"></script>
   <script src="/lib/velocity/velocity.min.js"></script>
   <script src="/lib/velocity/velocity.ui.min.js"></script>
+
 <script src="/js/utils.js"></script>
+
 <script src="/js/motion.js"></script>
+
+
 <script src="/js/schemes/pisces.js"></script>
+
+
 <script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
 <script src="https://cdn.jsdelivr.net/npm/darkmode-js@1.5.7/lib/darkmode-js.min.js"></script>
+
 <script>
 var options = {
   bottom: '64px',
@@ -347,5 +505,6 @@ if (window.darkmode && !window.darkmode.isActivated()) {
   }
 }
 </script>
+
 </body>
 </html>
